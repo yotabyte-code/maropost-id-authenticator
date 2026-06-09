@@ -1,0 +1,18 @@
+# Secrets — NEVER commit. A leaked TOTP seed is permanent (can't be expired).
+.env
+*.env
+!.env.example
+accounts*.json
+!accounts.example.json
+api_token*.txt
+
+# Local deploy/runtime — publish docker-compose.example.yml, not these
+docker-compose.yml
+data/
+
+# Python / uv
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/

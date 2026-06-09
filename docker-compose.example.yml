@@ -1,0 +1,41 @@
+# Example deployment. Copy to docker-compose.yml and provide the two secret
+# files (accounts.json + api_token.txt), both gitignored.
+services:
+  mida:
+    build: .
+    # image: maropost-id-authenticator:0.1.0
+    user: "10001:10001"
+    read_only: true                 # rootfs is immutable; secrets are mounted RO
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - "ALL"
+    tmpfs:
+      - /tmp                        # HOME=/tmp; scratch only
+    environment:
+      MIDA_ACCOUNTS_FILE: /data/accounts.json
+      MIDA_API_TOKEN_FILE: /run/secrets/mida_api_token
+    # accounts.json on a WRITABLE volume so you can onboard from inside the
+    # container while mobile: `docker compose exec mida mida register`
+    volumes:
+      - ./data:/data
+    secrets:
+      - mida_api_token
+    networks:
+      - mida-net
+    # NOTE: no `ports:` — the broker is reachable only by services on mida-net,
+    # never published to the host. It still has outbound internet (needed to
+    # reach identity.maropost.com), so do NOT mark this network `internal: true`.
+    restart: unless-stopped
+
+  # A consumer joins the same network and calls http://mida:8080/session/<name>
+  # example-consumer:
+  #   image: your/app
+  #   networks: [ mida-net ]
+
+secrets:
+  mida_api_token:
+    file: ./api_token.txt
+
+networks:
+  mida-net: {}

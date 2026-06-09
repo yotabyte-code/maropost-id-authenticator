@@ -1,0 +1,8 @@
+{
+  "oe-sandbox": {
+    "store": "yourstore.mymaropost.com",
+    "email": "user+app@example.com",
+    "password": "REDACTED",
+    "totp_secret": "BASE32SECRETFROMENROLMENT"
+  }
+}

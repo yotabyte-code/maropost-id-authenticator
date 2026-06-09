@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.git/
+.gitignore
+# never bake secrets into an image
+.env
+*.env
+accounts*.json
+api_token*.txt
+tests/
+scratch/

@@ -1,0 +1,34 @@
+[project]
+name = "maropost-id-authenticator"
+version = "0.1.0"
+description = "Headless Maropost Identity (Keycloak OIDC + TOTP) login broker that vends a live _cpanel_sess cookie per account."
+requires-python = ">=3.11"
+dependencies = [
+    # Pinned: cloudscraper handles our plaintext credentials end-to-end and is a
+    # supply-chain-sensitive anti-bot lib — review before bumping. uv.lock holds hashes.
+    "cloudscraper==1.2.71",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.1",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "httpx>=0.27"]
+
+[project.scripts]
+mida = "maropost_id_authenticator.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/maropost_id_authenticator"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+markers = [
+    "integration: hits the live Maropost sandbox; requires MIDA_* env vars",
+]
