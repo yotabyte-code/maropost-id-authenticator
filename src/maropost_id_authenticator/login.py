@@ -108,6 +108,13 @@ class CpanelSession:
             r = self.scraper.get(f"https://{_host(self.store)}/_cpanel/home", timeout=TIMEOUT)
         except requests.exceptions.RequestException:
             return True  # transient network error: can't tell, so don't discard it
+        # A bounce to Maropost Identity (Keycloak OIDC) is a DEFINITIVE
+        # logged-out signal — cPanel redirects unauthenticated sessions there.
+        # Must be checked BEFORE the Cloudflare fail-open: identity.maropost.com
+        # can itself sit behind Cloudflare, and "assume alive" would then pin a
+        # dead session forever (the broker would never re-acquire it).
+        if "identity.maropost.com" in r.url:
+            return False
         if _looks_like_cloudflare(r.text):
             return True
         return _is_authenticated_html(r.text)

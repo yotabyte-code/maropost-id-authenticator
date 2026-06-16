@@ -103,6 +103,53 @@ def test_network_budget_separate_from_otp(monkeypatch):
     assert out.cookie_value == "v" and calls["n"] == 4
 
 
+class _FakeResp:
+    def __init__(self, url, text):
+        self.url, self.text = url, text
+
+
+class _FakeScraper:
+    """Returns a canned response for the /_cpanel/home validation GET."""
+    def __init__(self, resp):
+        self._resp = resp
+
+    def get(self, url, timeout=None):
+        return self._resp
+
+
+def _session_seeing(resp):
+    from maropost_id_authenticator.login import CpanelSession
+    return CpanelSession(
+        store="www.outbackequipment.com.au",
+        cookie_name="N1_cpanel_sess",
+        cookie_value="v",
+        scraper=_FakeScraper(resp),
+        acquired_at=0.0,
+    )
+
+
+def test_is_logged_in_false_when_bounced_to_identity():
+    """Expired session: /_cpanel/home redirects to Keycloak. Even if that page
+    looks like a Cloudflare challenge, the identity bounce wins -> logged out."""
+    resp = _FakeResp(
+        url="https://identity.maropost.com/realms/maropost/protocol/openid-connect/auth?x=1",
+        text="Just a moment...challenge-platform",  # CF-ish, must NOT fail open
+    )
+    assert _session_seeing(resp).is_logged_in() is False
+
+
+def test_is_logged_in_true_on_cloudflare_challenge_on_cpanel():
+    resp = _FakeResp(url="https://www.outbackequipment.com.au/_cpanel/home",
+                     text="Just a moment...")
+    assert _session_seeing(resp).is_logged_in() is True
+
+
+def test_is_logged_in_true_on_authenticated_cpanel():
+    resp = _FakeResp(url="https://www.outbackequipment.com.au/_cpanel/home",
+                     text='<body class="netoTheme-x"><div class="netoPage">ok</div></body>')
+    assert _session_seeing(resp).is_logged_in() is True
+
+
 def test_acquire_session_rejects_bad_attempt_counts():
     from maropost_id_authenticator import login as L
     with pytest.raises(ValueError):
