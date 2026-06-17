@@ -121,11 +121,37 @@ def _session_seeing(resp):
     from maropost_id_authenticator.login import CpanelSession
     return CpanelSession(
         store="www.outbackequipment.com.au",
-        cookie_name="N1_cpanel_sess",
-        cookie_value="v",
         scraper=_FakeScraper(resp),
         acquired_at=0.0,
     )
+
+
+class _Jar:
+    def __init__(self, cookies):
+        self._cookies = dict(cookies)
+
+    def get_dict(self):
+        return dict(self._cookies)
+
+
+class _JarScraper:
+    def __init__(self, cookies):
+        self.cookies = _Jar(cookies)
+
+
+def test_cookie_value_reads_live_jar_not_a_snapshot():
+    """Regression: cPanel silently re-mints _cpanel_sess; the jar follows the rotation.
+    cookie_name/value must reflect the CURRENT jar, not a value frozen at login, or the
+    broker would serve a dead cookie while is_logged_in() still considers it alive."""
+    from maropost_id_authenticator.login import CpanelSession
+    scraper = _JarScraper({"N1_cpanel_sess": "v1", "cf_clearance": "x"})
+    sess = CpanelSession(store="s", scraper=scraper, acquired_at=0.0)
+    assert sess.cookie_name == "N1_cpanel_sess"
+    assert sess.cookie_value == "v1"
+    assert sess.cookie == {"N1_cpanel_sess": "v1"}
+    # cPanel re-mints -> jar value rotates. The session must surface the NEW value.
+    scraper.cookies._cookies["N1_cpanel_sess"] = "v2-reminted"
+    assert sess.cookie_value == "v2-reminted"
 
 
 def test_is_logged_in_false_when_bounced_to_identity():

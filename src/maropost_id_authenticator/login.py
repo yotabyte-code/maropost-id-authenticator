@@ -10,6 +10,7 @@ it a plain function makes it trivially testable and reusable.
 """
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass
 from urllib.parse import urlencode, urljoin
@@ -20,15 +21,30 @@ from bs4 import BeautifulSoup
 
 from .totp import seconds_remaining, totp
 
-AUTHORIZE = "https://identity.maropost.com/realms/maropost/protocol/openid-connect/auth"
-CLIENT_ID = "neto_ecommerce"
-SCOPE = "openid organization email phone profile"
+# Maropost/Keycloak endpoints + OIDC params. Defaults are the live values; each is
+# env-overridable so a Maropost-side change can be patched without a code release.
+AUTHORIZE = os.environ.get(
+    "MIDA_AUTHORIZE_URL",
+    "https://identity.maropost.com/realms/maropost/protocol/openid-connect/auth",
+)
+CLIENT_ID = os.environ.get("MIDA_OIDC_CLIENT_ID", "neto_ecommerce")
+SCOPE = os.environ.get("MIDA_OIDC_SCOPE", "openid organization email phone profile")
 # base64({"login_url":"/_cpanel"}) — constant post-login target
-STATE = "eyJsb2dpbl91cmwiOiIvX2NwYW5lbCJ9"
+STATE = os.environ.get("MIDA_OIDC_STATE", "eyJsb2dpbl91cmwiOiIvX2NwYW5lbCJ9")
+# cPanel names the session cookie N<account>_cpanel_sess; the N-prefix varies per store,
+# so we match on this stable SUFFIX to find it in the jar.
+CPANEL_SESSION_COOKIE_SUFFIX = os.environ.get("MIDA_CPANEL_COOKIE_SUFFIX", "_cpanel_sess")
 
-# (connect, read) seconds. Generous enough for slow/mobile links, bounded so a
-# truly stalled hop fails fast instead of hanging forever.
-TIMEOUT = (15, 45)
+# (connect, read) seconds. Generous enough for slow/mobile links, bounded so a truly
+# stalled hop fails fast instead of hanging forever. Override as "connect,read".
+_timeout = os.environ.get("MIDA_HTTP_TIMEOUT")
+if _timeout:
+    _parts = [float(x) for x in _timeout.split(",")]
+    if len(_parts) != 2:
+        raise ValueError('MIDA_HTTP_TIMEOUT must be "connect,read" (two numbers)')
+    TIMEOUT = (_parts[0], _parts[1])
+else:
+    TIMEOUT = (15, 45)
 
 
 class LoginError(Exception):
@@ -84,13 +100,30 @@ def build_authorize_url(store: str) -> str:
 
 @dataclass
 class CpanelSession:
-    """A live cPanel session: the one cookie consumers copy to make requests."""
+    """A live cPanel session: the one cookie consumers copy to make requests.
+
+    cookie_name/cookie_value are read LIVE from the scraper's jar, never snapshotted.
+    cPanel idle-expires _cpanel_sess (~1h) but the Keycloak SSO session outlives it, so
+    is_logged_in()'s validation GET silently re-mints a fresh _cpanel_sess; the jar follows
+    that rotation. A value frozen at login would go stale while the broker still believes
+    the session is alive — so we always derive from the jar.
+    """
 
     store: str
-    cookie_name: str
-    cookie_value: str
     scraper: "cloudscraper.CloudScraper"
     acquired_at: float
+
+    @property
+    def cookie_name(self) -> str:
+        for cookie in self.scraper.cookies.get_dict():
+            if CPANEL_SESSION_COOKIE_SUFFIX in cookie:
+                return cookie
+        raise SessionCookieError(f"no `{CPANEL_SESSION_COOKIE_SUFFIX}` cookie in the session jar")
+
+    @property
+    def cookie_value(self) -> str:
+        """The CURRENT _cpanel_sess value from the live jar (follows re-mints)."""
+        return self.scraper.cookies.get_dict()[self.cookie_name]
 
     @property
     def cookie(self) -> dict[str, str]:
@@ -263,15 +296,13 @@ def _attempt_login(store, email, password, totp_secret, scraper) -> CpanelSessio
 
     # 4. confirm a GENUINELY authenticated session (div.netoPage), not just
     # the presence of a _cpanel_sess cookie (the login page sets one too).
-    name = next((k for k in s.cookies.get_dict() if "_cpanel_sess" in k), None)
+    name = next((k for k in s.cookies.get_dict() if CPANEL_SESSION_COOKIE_SUFFIX in k), None)
     home = s.get(f"https://{host}/_cpanel/home", timeout=TIMEOUT)
     if not name or not _is_authenticated_html(home.text):
         raise OtpError(_alert_text(r.text)
                        or "login did not establish an authenticated cPanel session")
     return CpanelSession(
         store=host,
-        cookie_name=name,
-        cookie_value=s.cookies.get_dict()[name],
         scraper=s,
         acquired_at=time.time(),
     )
