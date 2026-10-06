@@ -87,6 +87,9 @@ r = requests.get(f"https://{s['store']}/_cpanel/order",
                  cookies={s["cookie_name"]: s["cookie_value"]})
 ```
 
+If every account suddenly fails with `credentials rejected`, Maropost may have forced a
+password reset. See [docs/password-reset-runbook.md](docs/password-reset-runbook.md).
+
 If a consumer ever gets a cookie that bounces to login (the session was invalidated
 externally within the cache window), re-request with `?refresh=true` to force a fresh
 login.
